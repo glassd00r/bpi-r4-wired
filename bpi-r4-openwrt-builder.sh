@@ -1,29 +1,41 @@
 #!/bin/bash
+set -euo pipefail
 
 rm -rf openwrt
 rm -rf mtk-openwrt-feeds
 
-git clone --branch master https://git.openwrt.org/openwrt/openwrt.git openwrt || true
-cd openwrt; git checkout 5edf6a4c25d6e5fc9046d4e5533b79b07bcb3ef4; cd -;		#ath79: whr-g301n: remove custon wifi LED
+git clone --branch openwrt-25.12 https://github.com/openwrt/openwrt.git openwrt
+cd openwrt; git checkout c2fe6ca16d0e6c9ec31da709d44263efdf12a3c1; cd -;		#OpenWrt v25.12.0: revert to branch defaults
 
-git clone https://git01.mediatek.com/openwrt/feeds/mtk-openwrt-feeds || true
-cd mtk-openwrt-feeds; git checkout cd9889f1eda6be7abe98416a2e19821166caa92c; cd -;	#Add support to get package information for unified autobuild
+git clone --branch master https://git01.mediatek.com/openwrt/feeds/mtk-openwrt-feeds
+cd mtk-openwrt-feeds; git checkout b0fefe65a28d5a5b938c9c197d6bbe729484ffef; cd -;	#[kernel-5.4/6.12][mt7988][eth][linux-firmware: mediatek: Revert firmware wrongly updated]
 
-echo "cd9889" > mtk-openwrt-feeds/autobuild/unified/feed_revision
+\cp -r my_files/999-sfp-10-additional-quirks.patch mtk-openwrt-feeds/25.12/files/target/linux/mediatek/patches-6.12
 
-#\cp -r my_files/w-rules mtk-openwrt-feeds/autobuild/unified/filogic/rules
-
-### required & thermal zone 
-#\cp -r my_files/1007-wozi-arch-arm64-dts-mt7988a-add-thermal-zone.patch mtk-openwrt-feeds/24.10/patches-base/
-
-sed -i 's/CONFIG_PACKAGE_perf=y/# CONFIG_PACKAGE_perf is not set/' mtk-openwrt-feeds/autobuild/unified/filogic/mac80211/24.10/defconfig
-sed -i 's/CONFIG_PACKAGE_perf=y/# CONFIG_PACKAGE_perf is not set/' mtk-openwrt-feeds/autobuild/autobuild_5.4_mac80211_release/mt7988_wifi7_mac80211_mlo/.config
-sed -i 's/CONFIG_PACKAGE_perf=y/# CONFIG_PACKAGE_perf is not set/' mtk-openwrt-feeds/autobuild/autobuild_5.4_mac80211_release/mt7986_mac80211/.config
-
-#\cp -r my_files/3703-6.6.103-remove-uci-duplicate-ports.patch mtk-openwrt-feeds/autobuild/unified/filogic/24.10/patches-base/
+\cp -r my_files/9999-image-bpi-r4-sdcard.patch mtk-openwrt-feeds/25.12/patches-base
 
 cd openwrt
-bash ../mtk-openwrt-feeds/autobuild/unified/autobuild.sh filogic-mac80211-mt7988_rfb-mt7996 log_file=make
+bash ../mtk-openwrt-feeds/autobuild/unified/autobuild.sh filogic prepare
 
-exit 0
+scripts/feeds uninstall crypto-eip pce tops-tool
 
+\cp -r ../my_files/sms-tool/ feeds/packages/utils/sms-tool
+\cp -r ../my_files/modemdata-main/ feeds/packages/utils/modemdata 
+\cp -r ../my_files/luci-app-modemdata-main/luci-app-modemdata/ feeds/luci/applications
+\cp -r ../my_files/luci-app-lite-watchdog/ feeds/luci/applications
+\cp -r ../my_files/luci-app-sms-tool-js-main/luci-app-sms-tool-js/ feeds/luci/applications
+
+./scripts/feeds update -a
+./scripts/feeds install -a
+
+\cp -r ../my_files/qmi.sh package/network/utils/uqmi/files/lib/netifd/proto/
+chmod -R 755 package/network/utils/uqmi/files/lib/netifd/proto
+chmod -R 755 feeds/luci/applications/luci-app-modemdata/root
+chmod -R 755 feeds/luci/applications/luci-app-sms-tool-js/root
+chmod -R 755 feeds/packages/utils/modemdata/files/usr/share
+
+
+\cp -r ../my_files/my_final_defconfig .config
+make defconfig
+
+bash ../mtk-openwrt-feeds/autobuild/unified/autobuild.sh filogic build
